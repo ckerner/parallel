@@ -1,0 +1,635 @@
+#!/bin/bash
+#====================================================================================#
+# parallel - Reads commands from STDIN or a file and processes them in parallel.     #
+#------------------------------------------------------------------------------------#
+# Change History                                                                     #
+# 20110627 Chad Kerner - Complete Rewrite                                            #
+#                                                                                    #
+#------------------------------------------------------------------------------------#
+# Log Message Date Format: CCYYMMDD.HHMMSS                                           #
+#====================================================================================#
+        
+# Initialize for execution
+{
+   START_TIME=`date +"%s"`                # Time we started execution
+   IFS=$'\n'                              # Set the file seperator
+   PID=$$;                                # Get PID of parallel program
+   MAXRC=0                                # Set the maximum return code
+   VERSION="0.02"                         # Current version of the program
+   WORKDIR_PREFIX="/tmp/parallel.$USER"   # Prefix for the work directory
+   CMD_CTR=0                              # Counter of how many commands have executed
+   IS_PAUSED=0                            # Is the processing queue paused             
+   KEEP_WORK_DIR=0                        # Keep the working directories after execution
+   CTRLC=0                                # How many times CTRL-C has been pressed
+   CTRLC_TIMER=5                          # How many seconds to wait for the terminating CTRL-C
+
+   DEFAULT_THREADS=2                      # Default number of threads to start
+   DEFAULT_TIMER=5                        # Default timer interval
+}
+
+
+#
+# This function will calculate the elapsed time from two EPOCH times
+# Returns a formatted string: ?d.?h.?m.?s
+#
+function elapsed_time {
+   local TIME_START=$1
+   local TIME_END=$2
+   local ELAPSED_TIME=0
+   local DAYS=0
+   local HOURS=0
+   local MINS=0
+   local SECS=0
+
+   ELAPSED_TIME=$((TIME_END-TIME_START))
+
+   while [ ${ELAPSED_TIME} -ge 86400 ] ; do
+      DAYS=$((DAYS+1))
+      ELAPSED_TIME=$((ELAPSED_TIME-86400))
+   done
+   while [ ${ELAPSED_TIME} -ge 3600 ] ; do
+      HOURS=$((HOURS+1))
+      ELAPSED_TIME=$((ELAPSED_TIME-3600))
+   done
+   while [ ${ELAPSED_TIME} -ge 60 ] ; do
+      MINS=$((MINS+1))
+      ELAPSED_TIME=$((ELAPSED_TIME-60))
+   done
+   SECS=${ELAPSED_TIME}
+   echo "${DAYS}d.${HOURS}h.${MINS}m.${SECS}s"
+}
+
+
+#
+# Print the message to the screen and the log file if necessary
+#
+function prt_msg {
+   local TYPE=$1
+   local MSG=$2
+   local VRB=${3:-$VERBOSE}
+   local MTIME=`date +"%Y%m%d.%H%M%S"`
+
+   if [ ${VRB} -eq 1 ] ; then
+      printf "%s %-12s  %s\n" ${MTIME} ${TYPE} ${MSG}
+   fi
+   printf "%s %-12s  %s\n" ${MTIME} ${TYPE} ${MSG} >> ${LOGFILE}
+}
+
+
+#
+# Print the usage information to the screen
+#
+function print_help {
+   PRGNAME=`basename $0`
+   cat <<EOHELP
+
+   Parallel Command Execution - Version: ${VERSION}    
+   Author: Chad Kerner - ckerner@ncsa.uiuc.edu
+
+   This was created to maintain control of the parallel execution of tons of small
+   jobs on a large SMP machine without having a batch job control system installed.
+
+   Usage: ${PRGNAME} [-h] [-s session id] [-w thread width] [-t timer(seconds) ] 
+                     [-f <input file> ] 
+
+   Option    Description
+   -d        Turn on debugging. This is very detailed.
+   -l        Turn on process logging. Creates 1 log file for each command executed.
+   -v        Execute in verbose mode
+   -k        Keep the working directory after execution completes
+   -f file   Input file containing the commands to execute in parallel. DEFAULT=STDIN
+   -w width  Specifies how many threads to keep executing at a time. DEFAULT=${DEFAULT_THREADS}
+   -t timer  Specifies how many seconds to wait between checks for an available 
+             queue slot. DEFAULT=${DEFAULT_TIMER}
+
+   Session Modification
+   -s sess   Specifies which parallel session you wish to communicate with
+   -w width  Specifies how many threads to keep executing at a time. DEFAULT=${DEFAULT_THREADS}
+   -t timer  Specifies how many seconds to wait between checks for an available 
+             queue slot. DEFAULT=${DEFAULT_TIMER}
+   -v        Toggle verbose mode off and on for the specified parallel session
+   --status  Display the status of the specifies parallel session
+   --pause   Pause the specified parallel session
+   --resume  Resume the specifie parallel session
+   --reload  Have the specified parallel session reload its configuration file
+   --stop    Gracefully stop the specified parallel session
+   --kill    Terminate the specified parallel session
+   --debug   Toggle debugging for the specified session
+
+   Maintenance Commands
+   --ls      List all parallel working directories
+   --list    List all parallel working directories
+   --clean   Purge the parallel working directories (interactive)
+   --fclean  Purge the parallel working directories (force remove)
+
+   -h|--help This help screen
+
+
+   Pressing CTRL-C on the executing parallel session will display the current status of the
+   parallel program.  If you press it twice in ${CTRLC_TIMER} seconds, the parallel execution will be
+   terminated.
+
+EOHELP
+
+   exit 1
+}
+
+
+#
+# Signal handler to print the current execution status of parallel.
+#
+function print_status {
+   CTRLC=$((CTRLC+1))
+   if [ ${CTRLC} -eq 1 ] ; then
+      DATE1=`date +"%s"`
+   elif [ ${CTRLC} -eq 2 ] ; then
+      DATE2=`date +"%s"`
+      ELA=$((DATE2-DATE1))
+      if [ ${ELA} -le ${CTRLC_TIMER} ] ; then
+         prt_msg "TERMINATING" "Parallel execution terminated via CTRL-C...." 1
+         wait
+         exit 1
+      else
+         DATE1=${DATE2}
+      fi
+      CTRLC=1
+   fi
+          
+   local EDATE=`date +"%s"`
+   ELAPSED_STR=$(elapsed_time $START_TIME $EDATE)
+   if [ "x${OPT_INPUT_FILE}" == "x" ] ; then
+      prt_msg "STATUS" $(printf "Elapsed: %-15s  Threads: %s  TIMER: %s  Completed: %-6s  MAXRC: %s" ${ELAPSED_STR} ${THREADS} ${TIMER} ${CMD_CTR} ${MAXRC}) 1
+   else
+      PCT_DONE=$(((100 * CMD_CTR)/MAX_CMDS))
+      prt_msg "STATUS" $(printf "Elapsed: %-15s  Threads: %s  TIMER: %s  Completed: %6s / %-6s  PCT: %-3s  MAXRC: %s" ${ELAPSED_STR} ${THREADS} ${TIMER} ${CMD_CTR} ${MAX_CMDS} ${PCT_DONE} ${MAXRC}) 1
+   fi
+}
+
+
+#
+# When getting the status of a remote session, write it to the status file.
+#
+function remote_status {
+   print_status > ${STATUS_FILE}
+}
+
+
+#
+# Signal handler to reload the configuration file.
+#
+function reload_config {
+   load_configuration
+   prt_msg "CFG_LOADED" $(printf "Threads: %s  Timer: %s  DEBUG: %s  Logging: %s  Verbose: %s  Paused: %s" $THREADS $TIMER $DEBUG $LOGGING $VERBOSE $IS_PAUSED ) 1
+}
+
+
+#
+# Pause queue processing.  Threads curently running get to finish.
+#
+function pause_queue {
+   SAVE_THREADS=${THREADS}
+   SAVE_TIMER=${TIMER}
+
+   THREADS=0
+   TIMER=30
+   IS_PAUSED=1
+
+   save_configuration
+   prt_msg "PAUSE_EXEC" "Parallel currently paused. Threads: ${THREADS}  Timer: ${TIMER}" 1
+}
+
+
+#
+# Resume command processing after being paused.
+#
+function resume_queue {
+   THREADS=${SAVE_THREADS}
+   TIMER=${SAVE_TIMER}
+
+   IS_PAUSED=0
+
+   save_configuration
+   prt_msg "RESUME_EXEC" "Parallel execution resumed. Threads: ${THREADS}  Timer: ${TIMER}" 1
+}
+
+
+#
+# Toggle debugging in the master process.       
+#
+function toggle_debug {
+   if [ ${DEBUG} -eq 1 ] ; then
+      DEBUG=0
+      set +x
+   else
+      DEBUG=1
+      set -x
+   fi
+   prt_msg "DEBUG" $(printf "Toggled debugging in the master thread. DEBUG: %s" $DEBUG) 1
+}
+
+
+#
+# An immediate stop has been issued.  Locate all the child processes and terminate them.
+#
+function immediate_stop {
+   THREADS=0
+   TIMER=600
+   IS_PAUSED=1
+   prt_msg "IMMSTOP" "An immediate stop has been started... Terminating child processes." 1
+
+   kill -9 `ps -a --ppid=${PID} | grep -vE ' ps|grepi|PID' | awk '{print($1)}'`
+
+   # We are done, call the cleanup routine
+   cleanup
+   exit ${MAXRC}
+}
+
+
+#
+# A nice stop was issued.  Set the threads to 0 and the timer high.  Pause the queue and
+# issue a wait to let all child processes finish before ending.
+#
+function nice_stop {
+   THREADS=0
+   TIMER=600
+   IS_PAUSED=1
+   prt_msg "NICESTOP" "Nice stop has been initialized... Waiting for processes to finish." 1
+   wait
+
+   # We are done, call the cleanup routine
+   cleanup
+   exit ${MAXRC}
+}
+
+   
+#
+# Set up the signal handlers used for IPC
+#
+function init_signal_handlers {
+   # Signal parallel to print its current status
+   trap print_status SIGINT
+
+   # Signal parallel to pause the queue
+   trap pause_queue SIGUSR1
+
+   # Signal parallel to resume processing
+   trap resume_queue SIGUSR2
+
+   # Signal parallel to stop nicely, letting current threads finish
+   trap nice_stop SIGTERM
+
+   # Signal parallel to stop nicely, letting current threads finish
+   trap immediate_stop SIGABRT
+
+   # Signal parallel to reload its configuration file
+   trap reload_config SIGHUP
+
+   # Signal parallel to toggle debugging.              
+   trap toggle_debug SIGALRM
+
+   # Signal parallel to send status to the remote instance
+   trap remote_status SIGTRAP
+}
+
+#
+# Purge the old working directories
+#
+function clean_old_directories {
+   local FORCE=$1
+   if [ "$FORCE" == "" ] ; then
+      rm -Ri /tmp/parallel.${USER}.* 
+      RC=$?
+   else
+      rm -Rf /tmp/parallel.${USER}.* 2>/dev/null
+      RC=$?
+   fi
+   exit $RC
+}
+
+
+#
+# List all sessions
+#
+function list_sessions {
+   DIRLIST=`ls -d /tmp/parallel.${USER}* 2>/dev/null | sed -e 's/\/tmp\///g' `
+   RC=$?
+   if [ $RC -gt 0 ] ; then
+      prt_msg "ERROR"  "No Parallel Sessions To List..." 1
+   fi
+
+   for DIRNAME in ${DIRLIST}
+      do PID=`echo ${DIRNAME} | sed -e 's/\./ /g' | awk '{print($3)}'`
+      CHKPID=`ps --pid ${PID} 2>/dev/null`
+      PRC=$?
+      if [ ${PRC} -eq 0 ] ; then
+         PSTATE="Active"
+      else
+         PSTATE="Done"
+      fi
+      printf "%8s\t%s" ${PSTATE} ${DIRNAME}
+   done
+
+   exit 0
+}
+
+
+#
+# process the command line options
+#
+function process_options {
+#   if [ $# -eq 0 ] ; then
+#      print_help
+#   fi
+
+   while [ $# -gt 0 ] 
+      do case $1 in
+         -h|--help)          print_help ;;
+         -d)                 DEBUG=1 ;;
+         -l)                 LOGGING=1 ;;
+         -v)                 OPT_VERBOSE=1; OPT_SET=1 ;;
+         -k)                 KEEP_WORK_DIR=1 ;;
+         --status)           SESSION_CMD="status" ;;
+         --pause)            SESSION_CMD="pause" ;;
+         --resume)           SESSION_CMD="resume" ;;
+         --reload)           SESSION_CMD="reload" ;;
+         --stop)             SESSION_CMD="stop" ;;
+         --kill)             SESSION_CMD="kill" ;;
+         --debug)            SESSION_CMD="debug" ;;
+         --clean)            clean_old_directories ;;
+         --fclean|--fc)      clean_old_directories force ;;
+         --ls|--list)        list_sessions ;;
+         -w)                 OPT_THREADS=$2; OPT_SET=1; shift ;;
+         -t)                 OPT_TIMER=$2; OPT_SET=1; shift ;;
+         -s)                 SESSION=$2; shift ;;
+         -f)                 OPT_INPUT_FILE=$2; shift ;;
+      esac
+      shift
+   done
+}
+
+
+#
+# Check the command line options and validate them
+# 
+function validate_options {
+   [[ ${DEBUG:=0} ]]
+   [[ ${LOGGING:=0} ]]
+   [[ ${IS_PAUSED:=0} ]]
+   THREADS=${OPT_THREADS:-$DEFAULT_THREADS}
+   TIMER=${OPT_TIMER:-$DEFAULT_TIMER}
+   VERBOSE=${OPT_VERBOSE:-0}
+   INPUT_FILE=${OPT_INPUT_FILE:-"-"}
+   WORKDIR="${WORKDIR_PREFIX}.${SESSION:-${PID}}"
+   LOGFILE="${WORKDIR}/output"
+   CONFIG_FILE="${WORKDIR}/config"
+   STATUS_FILE="${WORKDIR}/status"
+   ERROR_FILE="${WORKDIR}/errors"
+}
+
+
+# 
+# Create a working space in /tmp for parallel execution
+#
+function create_workspace {
+   if [ -e ${WORKDIR} ] ; then
+      rm -Rf $WORKDIR 2>&1 >/dev/null
+   fi
+  
+   mkdir -p ${WORKDIR}
+   RC=$?
+   if [ $RC -ne 0 ] ; then
+      prt_msg "ERROR" $(printf "Create Work Directory: %s Failed RC: %s" ${WORKDIR} ${RC} ) 1
+      exit 3
+   fi
+}
+
+
+#
+# Write the configuration information to the config file
+#
+function save_configuration {
+   if [ -e ${CONFIG_FILE} ] ; then
+      rm -f ${CONFIG_FILE} 2>&1 >/dev/null
+   fi
+
+   # To store any additional variables, just add their key name here
+   for key in THREADS TIMER DEBUG LOGGING VERBOSE IS_PAUSED
+       do value=$(eval echo \$$(echo $key))
+       echo "${key}=${value}" >> ${CONFIG_FILE}
+   done
+}
+
+
+#
+# Read the configuration information from the config file.
+#
+function load_configuration {
+   if [ -e ${CONFIG_FILE} ] ; then
+   . ${CONFIG_FILE}
+   fi
+}
+
+
+#
+# Toggle the verbose flag off or on.                     
+#
+function toggle_verbose {
+   if [ $VERBOSE -eq 0 ] ; then
+      VERBOSE=1
+   else
+      VERBOSE=0
+   fi
+}
+
+
+#
+# Modify an existing session
+#
+function modify_existing_session {
+   # See if the session is valid
+   if [ ! -d ${WORKDIR} ] ; then
+      prt_msg "ERROR" "${WORKDIR} does not exist." 1
+      exit 2
+   fi
+
+   case $SESSION_CMD in
+      status)
+         kill -s SIGTRAP ${SESSION}
+         while [ ! -e ${STATUS_FILE} ] ; 
+            do sleep 1
+         done
+         cat ${STATUS_FILE}
+         rm -f ${STATUS_FILE} 2>&1 >/dev/null
+         exit 0
+         ;;
+      reload)
+         kill -s SIGHUP ${SESSION}
+         exit 0
+         ;;
+      pause)
+         kill -s SIGUSR1 ${SESSION}
+         exit 0
+         ;;
+      resume)
+         kill -s SIGUSR2 ${SESSION}
+         exit 0
+         ;;
+      debug)
+         kill -s SIGALRM ${SESSION}
+         exit 0
+         ;;
+   esac
+
+   # If we got here, we have a session specified and possibly some options.
+   if [ $OPT_SET -eq 1 ] ; then
+      load_configuration
+      THREADS=${OPT_THREADS:-$THREADS}
+      TIMER=${OPT_TIMER:-$TIMER}
+      if [ $OPT_VERBOSE ] ; then
+         toggle_verbose
+      fi
+      save_configuration
+      kill -s SIGHUP ${SESSION}
+   fi
+   exit 0
+}
+
+
+#
+# Calculate the ending time, clean up working directories if necessary
+#
+function cleanup {
+   # We are done, calculate our total elapsed time
+   FINISH_TIME=`date +"%s"`
+   ELAPSED_STR=$(elapsed_time $START_TIME $FINISH_TIME)
+   prt_msg "FINISHED" $(printf "Commands: %s  Max RC: %s  Elapsed Time: %s" $CMD_CTR $MAXRC $ELAPSED_STR) 1
+
+   # We are all done, lets clean up the working directory
+   if [ ${KEEP_WORK_DIR} -eq 0 ] ; then
+      rm -Rf $WORKDIR 2>&1 >/dev/null
+   fi
+}
+
+
+
+# Main Code Block
+{
+   # Initialize the signal handlers for kill
+   init_signal_handlers
+
+   # Process the command line options
+   process_options $*
+
+   # Perform some validity checks on the command line options
+   validate_options
+
+   # Turn on debugging if specified
+   if [ ${DEBUG} -eq 1 ] ; then
+      set -x
+   fi
+
+   # If we specified a session, check to see if we need to modify one
+   if [ "x${SESSION}" != "x" ] ; then
+      modify_existing_session
+   fi
+
+   # Setup a working directory for log files and execution information
+   create_workspace
+
+   # Save the configuration information
+   save_configuration
+
+   # If a command file is given, map the file to STDIN
+   if [ "${INPUT_FILE}" != "-" ] ; then
+      if [ -r ${INPUT_FILE} ] ; then
+         # Get the number of commands in the file.
+         MAX_CMDS=`wc -l ${INPUT_FILE} | awk '{print($1)}'`
+         # Map the file to STDIN without killing STDIN
+         exec 0<"${INPUT_FILE}"
+      else
+         prt_msg "ERROR" "${INPUT_FILE} does not exist or is not readable." 1
+         exit 4
+      fi
+   fi
+
+   prt_msg "INITIALIZING" $(printf "Session: %s.%s  Threads: %s  Timer: %s  File: %s\n" $USER $PID $THREADS $TIMER ${OPT_INPUT_FILE:-"STDIN"}) 1
+
+   # Read the command list and process it
+   while read CMDLINE ; do
+
+      # Increment the command counter
+      CMD_CTR=$((CMD_CTR+1))
+
+      # Check to see if we are paused.  If so, sleep and loop
+      while [ ${IS_PAUSED} -eq 1 ] ; do
+         sleep ${TIMER}
+      done
+
+      # Loop thru the slots until we get a free one, or the next open one
+      while [ true ]; do
+
+         # Look for a free slot
+         # for (( IDX = 0 ; IDX < $THREADS ; ++IDX )) ; do
+         for (( IDX = 1 ; IDX <= $THREADS ; ++IDX )) ; do
+             if [ ! -e $WORKDIR/parallel.$IDX ]; then
+                break
+             fi
+         done
+
+         # if [ $IDX -lt $THREADS ]; then
+         if [ $IDX -le $THREADS ]; then
+            break
+         fi
+
+         # if can't find any free slot, repeat after sleep
+         sleep ${TIMER};
+
+      done
+
+      # If we are here, we have a valid thread slot to operate in, so lets do it
+
+      # Save the command line info into a place holder so we can easily see what is running
+      {
+         echo $CMDLINE > ${WORKDIR}/parallel.${IDX}
+      }
+
+      # Execute the command in the background and then free the slot when done
+      (
+         # Get the starting time of the process in EPOCH
+         SDATE_EPOCH=`date +"%s"`
+
+         prt_msg "EXECUTING" $(printf "THR:%-5s  CTR:%-5s  CMD:%-s" ${IDX} ${CMD_CTR} "${CMDLINE}")
+
+         # Execute the command
+         if [ $LOGGING -eq 0 ] ; then
+            sh -c "$CMDLINE >/dev/null 2>&1";
+            RC=$?
+         else
+            THREAD_LOG="${WORKDIR}/log.${CMD_CTR}"
+            sh -c "$CMDLINE 2>&1 > ${THREAD_LOG}";
+            RC=$?
+         fi
+
+         # If the return code is greater than the max, save it for the exit code.
+         if [ $RC -gt $MAXRC ] ; then
+            MAXRC=$RC
+         fi
+
+         # Get the ending date and time
+         EDATE_EPOCH=`date +"%s"`
+         prt_msg "COMPLETED" $(printf "THR:%-5s  NUM:%-5s  SECS:%-7s  RC:%-3s   CMD:%-s" ${IDX} ${CMD_CTR} $((EDATE_EPOCH-SDATE_EPOCH)) $RC "${CMDLINE}")
+
+         # The command has finished, free the slot before looping again.
+         rm -f ${WORKDIR}/parallel.${IDX} 2>&1 >/dev/null
+      ) &
+   done
+
+   # We have processed all of the commands, but some may still be running in the
+   # background.  Wait for them all to be done.
+   wait;
+
+   # We are done, call the cleanup routine
+   cleanup
+
+   exit ${MAXRC}
+} 
