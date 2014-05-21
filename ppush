@@ -145,6 +145,10 @@ function process_options {
    # Sync the final top level
    rsync -lptgoDd . ${TARGET_DIR}
 
+   # Clean up temporary files
+   if [ ${DEBUG} -eq 0 ] ; then
+      rm -f /tmp/ppush.${PID}.* &>/dev/null
+   fi
 }
 
 # Exit gracefully
