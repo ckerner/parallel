@@ -1,0 +1,153 @@
+#!/bin/bash
+
+function init_routine {
+   PRGNAME=`basename $0`
+   PARALLEL=`which parallel 2>/dev/null`
+   AUTHOR="Andy Loftus               Chad Kerner"
+   EMAIL="aloftus@illinois.edu      ckerner@illinois.edu"
+   VERSION="0.1"
+   DEFAULT_DEPTH=3
+   DEFAULT_WIDTH=8
+   PID=$$
+}
+
+# Print the usage screen
+function print_usage {
+   cat <<EOHELP
+
+   Parallel PUSH Files via RSYNC - Version ${VERSION}
+
+   Authors: ${AUTHOR} 
+            ${EMAIL}
+
+   Usage: ${PRGNAME} [-D] [-h|--help] [-V|--version] -f <List Of Files> -s <List Of Servers>
+
+   OPTION             USAGE
+   -s|--source dir    Specifies the source directory to sync
+   -t|--target dir    Specified the target directory. Can be local or remote.
+
+   -d <depth>         Set the maximum recursion depth for transfers. Default: ${DEFAULT_DEPTH}
+   -w <width>         Set the number of concurrent rsync threads. Default: ${DEFAULT_WIDTH}
+
+   -D|--debug         Turn on debugging for this script.  This is very detailed(set -x).
+
+   -h|--help          This help screen
+   -v|--version       Print the program version.
+
+EOHELP
+}
+
+function print_version {
+   echo "${PRGNAME} ${VERSION}      ${EMAIL}"
+}
+
+function print_error {
+   MSG=$@
+   printf "\n\tERROR: %s\n" "${MSG}"
+   exit 1
+}
+
+# Validate the options that were specified
+function validate_options {
+   [[ ${DEBUG:=0} ]]
+
+   if [ "x${USER_DEPTH}" == "x" ] ; then
+      MAX_DEPTH=${DEFAULT_DEPTH}
+   else
+      MAX_DEPTH=${USER_DEPTH}
+   fi
+
+   if [ "x${USER_WIDTH}" == "x" ] ; then
+      MAX_WIDTH=${DEFAULT_WIDTH}
+   else
+      MAX_WIDTH=${USER_WIDTH}
+   fi
+
+   if [ "x${SOURCE_DIR}" == "x" ] ; then
+      print_error "ERROR: You must specify a source directory."
+   fi
+
+   if [ ! -d ${SOURCE_DIR} ] ; then
+      print_error "ERROR: ${SOURCE_DIR} is not a valid directory."
+   fi
+
+   if [ "x${TARGET_DIR}" == "x" ] ; then
+      print_error "ERROR: You must specify a target directory."
+   fi
+
+   if [ ! -x ${PARALLEL} ] ; then
+      print_error "ERROR: parallel is not in the default search path."
+   fi
+}
+
+# Process the command line options ( I hate getopt...)
+function process_options {
+   while [ $# -gt 0 ]
+      do case $1 in
+         -d)           USER_DEPTH=$2 ; shift ;;
+         -w)           USER_WIDTH=$2 ; shift ;;
+         -s|--source)  SOURCE_DIR=$2 ; shift ;;
+         -t|--target)  TARGET_DIR=$2 ; shift ;;
+         -P)           USER_PARALLEL_OPTS=$2 ; shift ;;
+         -D|--debug)   DEBUG=1 ;;
+         -i)           IONICE=1 ;;
+         -h|--help)    print_usage ; exit 0 ;;
+         -v|--version) print_version ; exit 0 ;;
+      esac
+      shift
+   done
+}
+
+
+# Main Code Block
+{
+   # Do some basic initialization
+   init_routine
+
+   # Process the command line options
+   process_options $*
+
+   # Perform some sanity checks
+   validate_options
+
+   # Turn on debugging if specified
+   if [ ${DEBUG} -eq 1 ] ; then
+      set -x
+   fi
+
+   cd ${SOURCE_DIR}
+   # Build the lists
+   for DEPTH in $(seq 1 ${MAX_DEPTH})
+       do find . -mindepth ${DEPTH} -maxdepth ${DEPTH} -type d >/tmp/ppush.${PID}.dirs.${DEPTH}
+       # Set recursive only on MAX_DEPTH
+       if [ ${DEPTH} -eq ${MAX_DEPTH} ] ; then
+          RSYNC_OPTS="-lptgoDd"
+       else
+          RSYNC_OPTS="-lptgoDdr"
+       fi
+
+       # Build rsync
+       for DIR in `cat /tmp/ppush.${PID}.dirs.${DEPTH}`
+           do echo "rsync ${RSYNC_OPTS} ${DIR}/ ${TARGET_DIR}/${DIR}"
+       done > /tmp/ppush.${PID}.sync.${DEPTH}
+   done
+
+   # Build the remote structure
+   for DEPTH in $(seq 1 ${MAX_DEPTH})
+       do rsync -lptgoDd --files-from=/tmp/ppush.${PID}.dirs.${DEPTH} . ${TARGET_DIR} 2>/dev/null
+   done
+
+   # Transfer files in parallel
+   for DEPTH in `seq 1 ${MAX_DEPTH} | sort -rn`
+       do cat /tmp/ppush.${PID}.sync.${DEPTH} | ${PARALLEL} -v -w ${MAX_WIDTH}
+   done
+
+   # Sync the final top level
+   rsync -lptgoDd . ${TARGET_DIR}
+
+}
+
+# Exit gracefully
+exit 0
+
+
