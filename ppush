@@ -121,9 +121,9 @@ function process_options {
        do find . -mindepth ${DEPTH} -maxdepth ${DEPTH} -type d >/tmp/ppush.${PID}.dirs.${DEPTH}
        # Set recursive only on MAX_DEPTH
        if [ ${DEPTH} -eq ${MAX_DEPTH} ] ; then
-          RSYNC_OPTS="-lptgoDd"
-       else
           RSYNC_OPTS="-lptgoDdr"
+       else
+          RSYNC_OPTS="-lptgoDd"
        fi
 
        # Build rsync
