@@ -15,7 +15,7 @@
    IFS=$'\n'                              # Set the file seperator
    PID=$$;                                # Get PID of parallel program
    MAXRC=0                                # Set the maximum return code
-   VERSION="$Id$"                         # Current version of the program
+   VERSION="0.03"                         # Current version of the program
    WORKDIR_PREFIX="/tmp/parallel.$USER"   # Prefix for the work directory
    CMD_CTR=0                              # Counter of how many commands have executed
    IS_PAUSED=0                            # Is the processing queue paused             

@@ -9,7 +9,7 @@ function init_routine {
    IONICE_OPTS='-c 2 -n 2'
    AUTHOR="Andy Loftus               Chad Kerner"
    EMAIL="aloftus@illinois.edu      ckerner@illinois.edu"
-   VERSION="$Id$"
+   VERSION="0.02"
    DEFAULT_DEPTH=3
    DEFAULT_WIDTH=8
    PID=$$
