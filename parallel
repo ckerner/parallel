@@ -617,7 +617,7 @@ function cleanup {
 
          # Get the ending date and time
          EDATE_EPOCH=`date +"%s"`
-         prt_msg "COMPLETED" $(printf "THR:%-5s  NUM:%-5s  SECS:%-7s  RC:%-3s   CMD:%-s" ${IDX} ${CMD_CTR} $((EDATE_EPOCH-SDATE_EPOCH)) $RC "${CMDLINE}")
+         prt_msg "COMPLETED" $(printf "THR:%-5s  CTR:%-5s  SECS:%-7s  RC:%-3s   CMD:%-s" ${IDX} ${CMD_CTR} $((EDATE_EPOCH-SDATE_EPOCH)) $RC "${CMDLINE}")
 
          # The command has finished, free the slot before looping again.
          rm -f ${WORKDIR}/parallel.${IDX} 2>&1 >/dev/null
