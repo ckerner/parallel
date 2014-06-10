@@ -1,0 +1,26 @@
+TODO List For parallel
+----------------------
+   - add logic to see if the config file has been changed since the last 
+     sleep iteration.  If so, load it.
+   - add more information on help screen about signals and how to use them.
+   - clean up some of the variables with more advanced techniques.
+   - set default width to 1/2 the number of available cores
+   - Needs some examples in the help screen
+
+
+TODO List For ppush
+----------------------
+   - Needs some examples in the help screen
+
+
+TODO List For ppull
+----------------------
+   - create code from logic
+     scan remote top level for dirs
+       create dirs locally
+          traverse remote dirs looking for dirs
+             create those dirs locally (repeat till max depth)
+          rsync recursive the lowest level dirs
+       rsync the next level dirs
+     rsync top level dir
+

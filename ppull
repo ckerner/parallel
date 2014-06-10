@@ -1,0 +1,208 @@
+#!/bin/bash
+
+function init_routine {
+   PRGNAME=`basename $0`
+   DEFAULT_PARALLEL_CMD=`which parallel 2>/dev/null`
+   PARALLEL_OPTS=""
+   RSYNC_CMD=`which rsync 2>/dev/null`
+   IONICE_CMD=`which ionice 2>/dev/null`
+   IONICE_OPTS='-c 2 -n 2'
+   AUTHOR="Andy Loftus               Chad Kerner"
+   EMAIL="aloftus@illinois.edu      ckerner@illinois.edu"
+   VERSION="0.02"
+   DEFAULT_DEPTH=3
+   DEFAULT_WIDTH=8
+   PID=$$
+}
+
+# Print the usage screen
+function print_usage {
+   cat <<EOHELP
+
+   Parallel PUSH Files via RSYNC - Version ${VERSION}
+
+   Authors: ${AUTHOR} 
+            ${EMAIL}
+
+   Usage: ${PRGNAME} [-D] [-h|--help] [-V|--version] -f <List Of Files> -s <List Of Servers>
+
+   OPTION             USAGE
+   -s|--source dir    Specifies the source directory to sync
+   -t|--target dir    Specified the target directory. Can be local or remote.
+
+   -d <depth>         Set the maximum recursion depth for transfers. Default: ${DEFAULT_DEPTH}
+   -w <width>         Set the number of concurrent rsync threads. Default: ${DEFAULT_WIDTH}
+
+   -P <path>          A path to an alternate parallel program. Default:${DEFAULT_PARALLEL_CMD}
+   -D|--debug         Turn on debugging for this script.  This is very detailed(set -x).
+   -v|--verbose       Turn on verbose messaging to see what is going on.
+
+   -h|--help          This help screen
+   -V|--version       Print the program version.
+
+EOHELP
+}
+
+function print_version {
+   echo "${PRGNAME} ${VERSION}      ${EMAIL}"
+}
+
+function print_error {
+   MSG=$@
+   printf "\n\tERROR: %s\n" "${MSG}"
+   exit 1
+}
+
+# Validate the options that were specified
+function validate_options {
+   [[ ${DEBUG:=0} ]]
+   [[ ${VERBOSE:=0} ]]
+   [[ ${IONICE:=0} ]]
+
+   if [ "x${USER_DEPTH}" == "x" ] ; then
+      MAX_DEPTH=${DEFAULT_DEPTH}
+   else
+      MAX_DEPTH=${USER_DEPTH}
+   fi
+
+   if [ "x${USER_WIDTH}" == "x" ] ; then
+      MAX_WIDTH=${DEFAULT_WIDTH}
+   else
+      MAX_WIDTH=${USER_WIDTH}
+   fi
+
+   if [ "x${SOURCE_DIR}" == "x" ] ; then
+      print_error "ERROR: You must specify a source directory."
+   fi
+
+   if [ ! -d ${SOURCE_DIR} ] ; then
+      print_error "ERROR: ${SOURCE_DIR} is not a valid directory."
+   fi
+
+   if [ "x${TARGET_DIR}" == "x" ] ; then
+      print_error "ERROR: You must specify a target directory."
+   fi
+
+   if [ "x${USER_PARALLEL_CMD}" == "x" ] ; then
+      PARALLEL=${DEFAULT_PARALLEL_CMD}
+   else
+      PARALLEL=${USER_PARALLEL_CMD}
+   fi
+
+   if [ ! -x ${PARALLEL} ] ; then
+      print_error "ERROR:${PARALLEL} is not executable in the default search path."
+   fi
+  
+   if [ ${IONICE} -eq 1 ] ; then
+      if [ "x${IONICE_CMD}" == "x" ] ; then
+         print_error "ERROR: ionice is not in the default search path."
+      else
+         RSYNC="${IONICE_CMD} ${IONICE_OPTS} ${RSYNC_CMD}"
+      fi
+   else
+      RSYNC="${RSYNC_CMD}"
+   fi
+}
+
+# Process the command line options ( I hate getopt...)
+function process_options {
+   while [ $# -gt 0 ]
+      do case $1 in
+         -d)           USER_DEPTH=$2 ; shift ;;
+         -w)           USER_WIDTH=$2 ; shift ;;
+         -s|--source)  SOURCE_DIR=$2 ; shift ;;
+         -t|--target)  TARGET_DIR=$2 ; shift ;;
+         -P)           USER_PARALLEL_CMD=$2 ; shift ;;
+         -D|--debug)   DEBUG=1 ;;
+         -v|--verbose) VERBOSE=1 ;;
+         -i)           IONICE=1 ;;
+         -h|--help)    print_usage ; exit 0 ;;
+         -V|--version) print_version ; exit 0 ;;
+      esac
+      shift
+   done
+}
+
+
+# Main Code Block
+{
+   # Do some basic initialization
+   init_routine
+
+   # Process the command line options
+   process_options $*
+
+   # Perform some sanity checks
+   validate_options
+
+   # Turn on debugging if specified
+   if [ ${DEBUG} -eq 1 ] ; then
+      set -x
+   fi
+
+   cd ${SOURCE_DIR}
+   if [ ${VERBOSE} -eq 1 ] ; then
+      echo `date +"%Y%m%d.%H%M%S"`" Processing Directory: ${SOURCE_DIR}"
+   fi
+   # Build the lists
+   for DEPTH in $(seq 1 ${MAX_DEPTH})
+       do if [ ${VERBOSE} -eq 1 ] ; then
+          echo `date +"%Y%m%d.%H%M%S"`" ===> Recursion Level: ${DEPTH} / ${MAX_DEPTH}"
+       fi
+
+       find . -mindepth ${DEPTH} -maxdepth ${DEPTH} -type d >/tmp/ppull.${PID}.dirs.${DEPTH}
+       # Set recursive only on MAX_DEPTH
+       if [ ${DEPTH} -eq ${MAX_DEPTH} ] ; then
+          RSYNC_OPTS="-lptgoDdr"
+       else
+          RSYNC_OPTS="-lptgoDd"
+       fi
+
+       # Build rsync
+       for DIR in `cat /tmp/ppull.${PID}.dirs.${DEPTH}`
+           do echo "${RSYNC} ${RSYNC_OPTS} ${DIR}/ ${TARGET_DIR}/${DIR}"
+       done > /tmp/ppull.${PID}.sync.${DEPTH}
+   done
+
+   # Build the remote structure
+   if [ ${VERBOSE} -eq 1 ] ; then
+      echo `date +"%Y%m%d.%H%M%S"`" Creating Target Structure: ${TARGET_DIR}"
+   fi
+   for DEPTH in $(seq 1 ${MAX_DEPTH})
+       do if [ ${VERBOSE} -eq 1 ] ; then
+          echo `date +"%Y%m%d.%H%M%S"`" ===> Directory Level: ${DEPTH} / ${MAX_DEPTH}"
+       fi
+       ${RSYNC} -lptgoDd --files-from=/tmp/ppull.${PID}.dirs.${DEPTH} . ${TARGET_DIR} 2>/dev/null
+   done
+
+   # Transfer files in parallel
+   if [ ${VERBOSE} -eq 1 ] ; then
+      echo `date +"%Y%m%d.%H%M%S"`" Starting Parallel File Transfer"
+   fi
+   for DEPTH in `seq 1 ${MAX_DEPTH} | sort -rn`
+       do if [ ${VERBOSE} -eq 1 ] ; then
+          echo `date +"%Y%m%d.%H%M%S"`" ===> Transferring Depth: ${DEPTH}"
+       fi
+       cat /tmp/ppull.${PID}.sync.${DEPTH} | ${PARALLEL} ${PARALLEL_OPTS} -w ${MAX_WIDTH}
+   done
+
+   # Sync the final top level
+   if [ ${VERBOSE} -eq 1 ] ; then
+      echo `date +"%Y%m%d.%H%M%S"`" Syncing Top Level Files"
+   fi
+   ${RSYNC} -lptgoDd . ${TARGET_DIR}
+
+   # Clean up temporary files
+   if [ ${DEBUG} -eq 0 ] ; then
+      rm -f /tmp/ppull.${PID}.* &>/dev/null
+   fi
+
+   if [ ${VERBOSE} -eq 1 ] ; then
+      echo `date +"%Y%m%d.%H%M%S"`" Parallel Sync Complete"
+   fi
+}
+
+# Exit gracefully
+exit 0
+
+
