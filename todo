@@ -24,3 +24,14 @@ TODO List For ppull
        rsync the next level dirs
      rsync top level dir
 
+
+rsync -d cnfs::testing .
+find . -mindepth 1 -maxdepth 1 -type d -exec rsync -d cnfs::testing/{} {}\; 2>/dev/null
+find . -mindepth 2 -maxdepth 2 -type d -exec rsync -d cnfs::testing/{} {}\; 2>/dev/null
+
+MAXDEPTH to 1
+find . -mindepth 2 -maxdepth 2 -type d -exec rsync -xavP cnfs::testing/{} {}\; 2>/dev/null
+find . -mindepth 1 -maxdepth 1 -type d -exec rsync -lptgoDP cnfs::testing/{} {}\; 2>/dev/null
+find . -mindepth 0 -maxdepth 0 -type d -exec rsync -lptgoDP cnfs::testing/{} {}\; 2>/dev/null
+
+

@@ -3,7 +3,7 @@
 function init_routine {
    PRGNAME=`basename $0`
    DEFAULT_PARALLEL_CMD=`which parallel 2>/dev/null`
-   PARALLEL_OPTS=""
+   PARALLEL_OPTS="-v -t 1"
    RSYNC_CMD=`which rsync 2>/dev/null`
    IONICE_CMD=`which ionice 2>/dev/null`
    IONICE_OPTS='-c 2 -n 2'
