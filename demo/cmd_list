@@ -1,0 +1,55 @@
+
+#
+# Create sample test directory
+# 3 layers deep, 10 dirs wide at each layer, 10 files in each dir,
+# 10000 files at leaf
+#
+cd /home/aloftus/working/parallel/demo
+./mk_dirs
+
+#
+# Verify sample file creation
+#
+find /tmp/demo -mindepth 1 -maxdepth 1 -type d
+find /tmp/demo -mindepth 1 -maxdepth 1 -type f
+find /tmp/demo -mindepth 1 -maxdepth 1 -type d | wc -l
+find /tmp/demo -mindepth 1 -maxdepth 1 -type f | wc -l
+find /tmp/demo -mindepth 2 -maxdepth 2 -type d | wc -l
+find /tmp/demo -mindepth 2 -maxdepth 2 -type f | wc -l
+find /tmp/demo -mindepth 3 -maxdepth 3 -type d | wc -l
+find /tmp/demo -mindepth 3 -maxdepth 3 -type f | wc -l
+find /tmp/demo -mindepth 4 -maxdepth 4 -type d | wc -l
+find /tmp/demo -mindepth 4 -maxdepth 4 -type f | wc -l
+
+#
+# Show remote side
+#
+rsync gpfs01::
+rsync gpfs01::testing/
+
+#
+# Parallel sync, push to remote machine
+#
+cd /home/aloftus/working/parallel
+./ppush \
+  -s /tmp/demo/ \
+  -t gpfs01::testing/ \
+  -d 2 \
+  -P /home/aloftus/working/parallel/parallel \
+  -v
+
+#
+# Verify remote is same as local
+#
+rsync -vruP /tmp/demo/ gpfs01::testing/
+
+#
+# md5sum in parallel
+#
+find /tmp/demo -mindepth 2 -maxdepth 2 -type f \
+  -exec echo md5sum {} \; \
+  | ./parallel -l -v -w 10 -t 1 -k
+
+cd /tmp/parallel*
+ls
+cat log*

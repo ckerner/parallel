@@ -1,0 +1,36 @@
+#!/bin/bash
+
+BASE=/tmp/demo
+
+mkdir /tmp/demo
+
+for i in $(seq 1 10); do
+  touch $BASE/file.$i
+  idir=/tmp/demo/$i
+  mkdir $idir
+
+  for j in $(seq 1 10); do
+    touch $idir/file.$j
+    jdir=$idir/$j
+    mkdir $jdir
+
+    for k in $(seq 1 10); do
+      touch $jdir/file.$k
+      kdir=$jdir/$k
+      mkdir $kdir
+
+      for l in $(seq 1 10); do
+        touch $kdir/file.$l
+#        ldir=$kdir/$l
+#        mkdir $ldir
+#
+#        for m in $(seq 1 10): do
+#          touch $ldir/file.$m
+#        done
+      done
+
+    done
+
+  done
+
+done
