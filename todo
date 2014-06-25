@@ -1,5 +1,6 @@
 TODO List For parallel
 ----------------------
+   - add option to merge individual logs into a single log file
    - add logic to see if the config file has been changed since the last 
      sleep iteration.  If so, load it.
    - add more information on help screen about signals and how to use them.

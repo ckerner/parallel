@@ -4,6 +4,7 @@
 #------------------------------------------------------------------------------------#
 # Change History                                                                     #
 # 20110627 Chad Kerner - Complete Rewrite                                            #
+# 20140624 Chad Kerner - Added logic to merge all logs when finished                 #
 #                                                                                    #
 #------------------------------------------------------------------------------------#
 # Log Message Date Format: CCYYMMDD.HHMMSS                                           #
@@ -25,6 +26,7 @@
 
    DEFAULT_THREADS=2                      # Default number of threads to start
    DEFAULT_TIMER=5                        # Default timer interval
+   DASHED_LINE=$(printf '=%.0s' {1..100})
 }
 
 
@@ -97,6 +99,7 @@ function print_help {
    -l        Turn on process logging. Creates 1 log file for each command executed.
    -v        Execute in verbose mode
    -k        Keep the working directory after execution completes
+   -m file   Merge all of the output logs into a single file
    -f file   Input file containing the commands to execute in parallel. DEFAULT=STDIN
    -w width  Specifies how many threads to keep executing at a time. DEFAULT=${DEFAULT_THREADS}
    -t timer  Specifies how many seconds to wait between checks for an available 
@@ -362,6 +365,7 @@ function process_options {
          -t)                 OPT_TIMER=$2; OPT_SET=1; shift ;;
          -s)                 SESSION=$2; shift ;;
          -f)                 OPT_INPUT_FILE=$2; shift ;;
+         -m)                 OPT_MERGE_LOGS=1; MERGED_OUTPUT_FILE=$2; shift ;;
       esac
       shift
    done
@@ -378,12 +382,20 @@ function validate_options {
    THREADS=${OPT_THREADS:-$DEFAULT_THREADS}
    TIMER=${OPT_TIMER:-$DEFAULT_TIMER}
    VERBOSE=${OPT_VERBOSE:-0}
+   MERGE_LOGS=${OPT_MERGE_LOGS:-0}
    INPUT_FILE=${OPT_INPUT_FILE:-"-"}
    WORKDIR="${WORKDIR_PREFIX}.${SESSION:-${PID}}"
    LOGFILE="${WORKDIR}/output"
    CONFIG_FILE="${WORKDIR}/config"
    STATUS_FILE="${WORKDIR}/status"
    ERROR_FILE="${WORKDIR}/errors"
+
+   if [ ${MERGE_LOGS} -eq 1 ] ; then
+      LOGGING=1
+      if [ "x${MERGED_OUTPUT_FILE}" == "x" ] ; then
+         prt_msg "ERROR" $(printf "No output file specified for the merged logs.")
+      fi
+   fi
 }
 
 
@@ -503,6 +515,27 @@ function cleanup {
    FINISH_TIME=`date +"%s"`
    ELAPSED_STR=$(elapsed_time $START_TIME $FINISH_TIME)
    prt_msg "FINISHED" $(printf "Commands: %s  Max RC: %s  Elapsed Time: %s" $CMD_CTR $MAXRC $ELAPSED_STR) 1
+
+   # Merge all output together into a single log file
+   if [ ${MERGE_LOGS} -eq 1 ] ; then
+      echo "Parallel Config" >> ${MERGED_OUTPUT_FILE}
+      cat ${CONFIG_FILE} >> ${MERGED_OUTPUT_FILE}
+      echo "${DASHED_LINE}" >> ${MERGED_OUTPUT_FILE}
+
+      echo "Logged Messages" >> ${MERGED_OUTPUT_FILE}
+      cat ${LOGFILE} >> ${MERGED_OUTPUT_FILE}
+      echo "${DASHED_LINE}" >> ${MERGED_OUTPUT_FILE}
+
+      echo "Error Messages" >> ${MERGED_OUTPUT_FILE}
+      cat ${ERROR_FILE} >> ${MERGED_OUTPUT_FILE}
+      echo "${DASHED_LINE}" >> ${MERGED_OUTPUT_FILE}
+
+      for OF in `ls -t ${WORKDIR}/log.*`
+          do echo "Log File: ${OF}" >> ${MERGED_OUTPUT_FILE}
+          cat ${OF} >> ${MERGED_OUTPUT_FILE}
+          echo "${DASHED_LINE}" >> ${MERGED_OUTPUT_FILE}
+      done
+   fi
 
    # We are all done, lets clean up the working directory
    if [ ${KEEP_WORK_DIR} -eq 0 ] ; then
