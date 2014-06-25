@@ -89,10 +89,10 @@ function validate_options {
       PARALLEL=${USER_PARALLEL_CMD}
    fi
 
-   if [ ! -x ${PARALLEL} ] ; then
-      print_error "ERROR:${PARALLEL} is not executable in the default search path."
+   if [[ ! -x "${PARALLEL}" ]] ; then
+      print_error "Path to parallel: \"${PARALLEL}\" is not executable or found in the default search path."
    fi
-  
+      
    if [ ${IONICE} -eq 1 ] ; then
       if [ "x${IONICE_CMD}" == "x" ] ; then
          print_error "ERROR: ionice is not in the default search path."

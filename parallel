@@ -100,6 +100,7 @@ function print_help {
    -v        Execute in verbose mode
    -k        Keep the working directory after execution completes
    -m file   Merge all of the output logs into a single file
+   -M file   Merge all of the output logs and execution information into a single file
    -f file   Input file containing the commands to execute in parallel. DEFAULT=STDIN
    -w width  Specifies how many threads to keep executing at a time. DEFAULT=${DEFAULT_THREADS}
    -t timer  Specifies how many seconds to wait between checks for an available 
@@ -366,6 +367,7 @@ function process_options {
          -s)                 SESSION=$2; shift ;;
          -f)                 OPT_INPUT_FILE=$2; shift ;;
          -m)                 OPT_MERGE_LOGS=1; MERGED_OUTPUT_FILE=$2; shift ;;
+         -M)                 OPT_MERGE_ALL_LOGS=1; MERGED_OUTPUT_FILE=$2; shift ;;
       esac
       shift
    done
@@ -383,6 +385,7 @@ function validate_options {
    TIMER=${OPT_TIMER:-$DEFAULT_TIMER}
    VERBOSE=${OPT_VERBOSE:-0}
    MERGE_LOGS=${OPT_MERGE_LOGS:-0}
+   MERGE_ALL_LOGS=${OPT_MERGE_ALL_LOGS:-0}
    INPUT_FILE=${OPT_INPUT_FILE:-"-"}
    WORKDIR="${WORKDIR_PREFIX}.${SESSION:-${PID}}"
    LOGFILE="${WORKDIR}/output"
@@ -390,7 +393,7 @@ function validate_options {
    STATUS_FILE="${WORKDIR}/status"
    ERROR_FILE="${WORKDIR}/errors"
 
-   if [ ${MERGE_LOGS} -eq 1 ] ; then
+   if [ ${MERGE_LOGS} -eq 1 || ${MERGE_ALL_LOGS} -eq 1 ] ; then
       LOGGING=1
       if [ "x${MERGED_OUTPUT_FILE}" == "x" ] ; then
          prt_msg "ERROR" $(printf "No output file specified for the merged logs.")
@@ -518,6 +521,10 @@ function cleanup {
 
    # Merge all output together into a single log file
    if [ ${MERGE_LOGS} -eq 1 ] ; then
+      for OF in `ls -t ${WORKDIR}/log.*`
+          do cat ${OF} >> ${MERGED_OUTPUT_FILE}
+      done
+   elif [ ${MERGE_ALL_LOGS} -eq 1 ] ; then
       echo "Parallel Config" >> ${MERGED_OUTPUT_FILE}
       cat ${CONFIG_FILE} >> ${MERGED_OUTPUT_FILE}
       echo "${DASHED_LINE}" >> ${MERGED_OUTPUT_FILE}
