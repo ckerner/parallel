@@ -1,17 +1,3 @@
-TODO List For parallel
-----------------------
-   - add option to merge individual logs into a single log file
-   - add logic to see if the config file has been changed since the last 
-     sleep iteration.  If so, load it.
-   - add more information on help screen about signals and how to use them.
-   - clean up some of the variables with more advanced techniques.
-   - set default width to 1/2 the number of available cores
-   - Needs some examples in the help screen
-
-
-TODO List For ppush
-----------------------
-   - Needs some examples in the help screen
 
 
 TODO List For ppull

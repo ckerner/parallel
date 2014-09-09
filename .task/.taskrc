@@ -1,0 +1,11 @@
+# Custom Stuff
+default.command=ls
+report.ls.columns=id,due,project,description
+report.ls.labels=id,due,project,description
+report.ls.sort=due+,project+,id+,description+
+
+report.tmsht.description=Timesheet
+report.tmsht.labels=Date,Project,Description
+report.tmsht.columns=end,project,description
+report.tmsht.sort=end
+
