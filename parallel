@@ -330,7 +330,7 @@ function list_sessions {
       else
          PSTATE="Done"
       fi
-      printf "%8s\t%s" ${PSTATE} ${DIRNAME}
+      printf "%8s\t%s\n" ${PSTATE} ${DIRNAME}
    done
 
    exit 0
