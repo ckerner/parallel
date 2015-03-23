@@ -393,7 +393,11 @@ function validate_options {
    STATUS_FILE="${WORKDIR}/status"
    ERROR_FILE="${WORKDIR}/errors"
 
-   if [ ${MERGE_LOGS} -eq 1 || ${MERGE_ALL_LOGS} -eq 1 ] ; then
+   if [ ${LOGGING} -eq 1 ] ; then
+      KEEP_WORK_DIR=1
+   fi
+
+   if [ ${MERGE_LOGS} -eq 1 -o ${MERGE_ALL_LOGS} -eq 1 ] ; then
       LOGGING=1
       if [ "x${MERGED_OUTPUT_FILE}" == "x" ] ; then
          prt_msg "ERROR" $(printf "No output file specified for the merged logs.")

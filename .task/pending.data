@@ -2,6 +2,6 @@
 [description:"add logic to see if the config file has changed since the last sleep iteration. If so, load it." entry:"1410231795" project:"parallel" status:"pending" uuid:"d2e39749-d6c7-42b3-a5a9-9d7341ce124a"]
 [description:"add more information on the help screen about signals and how to use them." entry:"1410231836" project:"parallel" status:"pending" uuid:"63d5ebc4-df5a-4eca-bec1-aac7bc7c8363"]
 [description:"clean up some of the variables with more advanced techniques." entry:"1410231859" project:"parallel" status:"pending" uuid:"33a9306b-b242-4526-8e7f-d35fca63d045"]
-[description:"set the default width to 11111 \/ 2 the number of available cores." entry:"1410231884" project:"parallel" status:"pending" uuid:"6155a659-c578-46a8-a49e-3785168c4aae"]
+[description:"set the default width to 1 \/ 2 the number of available cores." entry:"1410231884" modified:"1410273563" project:"parallel" status:"pending" uuid:"6155a659-c578-46a8-a49e-3785168c4aae"]
 [description:"need some examples in the help screen." entry:"1410231897" project:"parallel" status:"pending" uuid:"9443f00f-4782-43aa-890d-cdf67702c9e2"]
 [description:"need some examples in the help screen." entry:"1410231913" project:"ppush" status:"pending" uuid:"4f2c0985-c82b-4b8b-b998-6fa92e76e177"]

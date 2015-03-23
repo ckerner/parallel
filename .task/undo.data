@@ -23,3 +23,7 @@ new [description:"need some examples in the help screen." entry:"1410231897" pro
 time 1410231913
 new [description:"need some examples in the help screen." entry:"1410231913" project:"ppush" status:"pending" uuid:"4f2c0985-c82b-4b8b-b998-6fa92e76e177"]
 ---
+time 1410273563
+old [description:"set the default width to 11111 \/ 2 the number of available cores." entry:"1410231884" project:"parallel" status:"pending" uuid:"6155a659-c578-46a8-a49e-3785168c4aae"]
+new [description:"set the default width to 1 \/ 2 the number of available cores." entry:"1410231884" modified:"1410273563" project:"parallel" status:"pending" uuid:"6155a659-c578-46a8-a49e-3785168c4aae"]
+---
